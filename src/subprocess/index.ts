@@ -2,7 +2,7 @@
  * Tensorlake Service Provider for the subprocess capability seam. Each handle
  * starts through the shared sandbox daemon and retains exit-status and spill
  * paths in that remote world.
- * @module @tensorlake/dsh-sandbox/subprocess
+ * @module @tensorlakeai/dsh-sandbox/subprocess
  */
 
 import { randomUUID } from 'node:crypto'

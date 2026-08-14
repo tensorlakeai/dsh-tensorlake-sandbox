@@ -1,5 +1,5 @@
 {
-  "name": "@tensorlake/dsh-sandbox",
+  "name": "@tensorlakeai/dsh-sandbox",
   "version": "0.1.0",
   "description": "Tensorlake sandbox execution providers for DeepSeek Harness",
   "license": "MIT",

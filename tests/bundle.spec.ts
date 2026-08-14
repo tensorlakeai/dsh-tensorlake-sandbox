@@ -60,9 +60,9 @@ describe('installable bundle', () => {
       defaultPreset: 'danger-full-access',
     })
     expect(entries.filter(entry => entry.id?.startsWith('tensorlake-')).map(entry => entry.name)).toEqual([
-      '@tensorlake/dsh-sandbox/runtime',
-      '@tensorlake/dsh-sandbox/subprocess',
-      '@tensorlake/dsh-sandbox/filesystem',
+      '@tensorlakeai/dsh-sandbox/runtime',
+      '@tensorlakeai/dsh-sandbox/subprocess',
+      '@tensorlakeai/dsh-sandbox/filesystem',
     ])
   })
 })

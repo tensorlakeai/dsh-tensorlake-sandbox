@@ -3,7 +3,7 @@
  * atomic staging files remain inside the shared remote sandbox; metadata and
  * publication run through argv-style control commands because the sandbox
  * proxy exposes only whole-file read/write/list/delete primitives.
- * @module @tensorlake/dsh-sandbox/filesystem
+ * @module @tensorlakeai/dsh-sandbox/filesystem
  */
 
 import { randomUUID } from 'node:crypto'

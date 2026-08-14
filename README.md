@@ -1,6 +1,6 @@
 # Tensorlake sandbox for DeepSeek Harness
 
-`@tensorlake/dsh-sandbox` moves DeepSeek Harness file, subprocess, Bash, terminal, and LSP operations into one short-lived Tensorlake microVM. It is an installable dsh bundle and does not require changes to the Harness installation.
+`@tensorlakeai/dsh-sandbox` moves DeepSeek Harness file, subprocess, Bash, terminal, and LSP operations into one short-lived Tensorlake microVM. It is an installable dsh bundle and does not require changes to the Harness installation.
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ Install dsh and add this bundle to the profile you run:
 
 ```sh
 npm install --global @deepseek-ai/dsh
-dsh plugin --profile headless add @tensorlake/dsh-sandbox
+dsh plugin --profile headless add @tensorlakeai/dsh-sandbox
 TENSORLAKE_API_KEY=... DEEPSEEK_API_KEY=... dsh --profile headless "build and test this repo"
 ```
 
@@ -29,7 +29,7 @@ npm run build
 dsh plugin --profile headless add .
 ```
 
-Use `dsh --profile headless --dump-config` to verify that the `@tensorlake/dsh-sandbox` layer disables the host `subprocess` and `fs-sandbox` providers, inserts the Tensorlake runtime, subprocess, and filesystem rows, and keeps `bash-sandbox` mounted in `danger-full-access` mode. In that mode Harness's sandbox-aware Bash executor delegates directly to the Tensorlake subprocess provider while still satisfying the permission-preset capability contract.
+Use `dsh --profile headless --dump-config` to verify that the `@tensorlakeai/dsh-sandbox` layer disables the host `subprocess` and `fs-sandbox` providers, inserts the Tensorlake runtime, subprocess, and filesystem rows, and keeps `bash-sandbox` mounted in `danger-full-access` mode. In that mode Harness's sandbox-aware Bash executor delegates directly to the Tensorlake subprocess provider while still satisfying the permission-preset capability contract.
 
 ## Smoke test
 
@@ -104,4 +104,4 @@ npm run check
 npm pack
 ```
 
-The three Loader entry points are `@tensorlake/dsh-sandbox/runtime`, `@tensorlake/dsh-sandbox/filesystem`, and `@tensorlake/dsh-sandbox/subprocess`. Each module default-exports its service class; do not add function-plugin named exports to those modules because the Cordis Loader treats mixed export forms as a function-plugin namespace.
+The three Loader entry points are `@tensorlakeai/dsh-sandbox/runtime`, `@tensorlakeai/dsh-sandbox/filesystem`, and `@tensorlakeai/dsh-sandbox/subprocess`. Each module default-exports its service class; do not add function-plugin named exports to those modules because the Cordis Loader treats mixed export forms as a function-plugin namespace.

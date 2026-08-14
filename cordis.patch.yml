@@ -40,12 +40,12 @@
 
 - insert:
     - id: tensorlake-runtime
-      name: '@tensorlake/dsh-sandbox/runtime'
+      name: '@tensorlakeai/dsh-sandbox/runtime'
       config:
         cwd: !!js process.env.DSH_TENSORLAKE_CWD || '/home/tl-user/workspace'
 
     - id: tensorlake-subprocess
-      name: '@tensorlake/dsh-sandbox/subprocess'
+      name: '@tensorlakeai/dsh-sandbox/subprocess'
 
     - id: tensorlake-filesystem
-      name: '@tensorlake/dsh-sandbox/filesystem'
+      name: '@tensorlakeai/dsh-sandbox/filesystem'

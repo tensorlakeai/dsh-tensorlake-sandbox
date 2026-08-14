@@ -2,7 +2,7 @@
  * Shared ownership of one Tensorlake sandbox. Capability adapters await the
  * same SDK handle, so filesystem and process operations inhabit one remote
  * Linux world.
- * @module @tensorlake/dsh-sandbox/runtime
+ * @module @tensorlakeai/dsh-sandbox/runtime
  */
 
 import { posix } from 'node:path'
