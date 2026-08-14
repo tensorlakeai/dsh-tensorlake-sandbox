@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { CommandResult, RunOptions, Sandbox as SandboxType } from 'tensorlake'
@@ -13,6 +13,7 @@ import TensorlakeRuntime, {
 
 const CWD = '/home/tl-user/workspace'
 const RUNTIME_ROOT = '/home/tl-user/workspace/.dsh-tensorlake'
+const lifecycleOutput: string[] = []
 
 const sdk = vi.hoisted(() => ({
   create: vi.fn(),
@@ -37,6 +38,11 @@ interface SandboxFixture {
   terminate: ReturnType<typeof vi.fn>
 }
 
+interface AgentCreateOptions {
+  readonly meta?: Readonly<Record<string, unknown>>
+  readonly [key: string]: unknown
+}
+
 function commandResult(overrides: Partial<CommandResult> = {}): CommandResult {
   return { exitCode: 0, stdout: '', stderr: '', ...overrides }
 }
@@ -51,7 +57,14 @@ function fakeSandbox(id = 'sandbox-1'): SandboxFixture {
 beforeEach(() => {
   sdk.create.mockReset()
   vi.unstubAllEnvs()
+  lifecycleOutput.length = 0
+  vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+    lifecycleOutput.push(String(chunk))
+    return true
+  }) as typeof process.stderr.write)
 })
+
+afterEach(() => { vi.restoreAllMocks() })
 
 describe('TensorlakeRuntime', () => {
   it('creates one shared sandbox with a private runtime root and terminates it on disposal', async () => {
@@ -78,12 +91,17 @@ describe('TensorlakeRuntime', () => {
     })
     expect(fixture.run).toHaveBeenNthCalledWith(4, 'chmod', { args: ['700', '--', RUNTIME_ROOT] })
     expect(infos).toEqual([['Tensorlake sandbox created: %s', 'sandbox-1']])
+    expect(lifecycleOutput).toEqual(['Tensorlake sandbox created: sandbox-1\n'])
 
     await fiber.dispose()
     expect(fixture.terminate).toHaveBeenCalledOnce()
     expect(infos).toEqual([
       ['Tensorlake sandbox created: %s', 'sandbox-1'],
       ['Tensorlake sandbox terminated: %s', 'sandbox-1'],
+    ])
+    expect(lifecycleOutput).toEqual([
+      'Tensorlake sandbox created: sandbox-1\n',
+      'Tensorlake sandbox terminated: sandbox-1\n',
     ])
     await expect(service.getSandbox()).rejects.toThrow(/disposing/)
   })
@@ -116,6 +134,38 @@ describe('TensorlakeRuntime', () => {
 
     await fiber.dispose()
     expect(fixture.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('aligns agent session metadata with the remote cwd and restores the agent service on disposal', async () => {
+    const fixture = fakeSandbox()
+    sdk.create.mockResolvedValue(fixture.sandbox)
+    const calls: AgentCreateOptions[] = []
+    const original = vi.fn((options: AgentCreateOptions) => {
+      calls.push(options)
+      return options
+    })
+    const agents = { create: original }
+    const ctx = new Context()
+    ctx.provide('agents', agents)
+    const fiber = await ctx.plugin(TensorlakeRuntime, { apiKey: 'test-key' })
+
+    const active = ctx.get('agents') as typeof agents
+    expect(active.create({
+      sessionId: 'session-1',
+      meta: { cwd: '/Users/example/project', origin: 'headless' },
+    })).toEqual({
+      sessionId: 'session-1',
+      meta: { cwd: CWD, origin: 'headless' },
+    })
+    expect(calls).toEqual([{
+      sessionId: 'session-1',
+      meta: { cwd: CWD, origin: 'headless' },
+    }])
+
+    await fiber.dispose()
+    expect(agents.create({ meta: { cwd: '/Users/example/after' } })).toEqual({
+      meta: { cwd: '/Users/example/after' },
+    })
   })
 
   it('rejects handle acquisition when disposal starts during setup', async () => {
@@ -153,6 +203,7 @@ describe('TensorlakeRuntime', () => {
     expect(fixture.terminate).toHaveBeenCalledOnce()
     expect(errors).toEqual([])
     expect(infos).toEqual([['Tensorlake sandbox created: %s', 'sandbox-1']])
+    expect(lifecycleOutput).toEqual(['Tensorlake sandbox created: sandbox-1\n'])
   })
 
   it('does not classify other disposal failures as an already-gone sandbox', async () => {
@@ -258,6 +309,10 @@ describe('TensorlakeRuntime', () => {
       ['Tensorlake sandbox created: %s', 'sandbox-1'],
       ['Tensorlake sandbox terminated: %s', 'sandbox-1'],
     ])
+    expect(lifecycleOutput).toEqual([
+      'Tensorlake sandbox created: sandbox-1\n',
+      'Tensorlake sandbox terminated: sandbox-1\n',
+    ])
     await fiber.dispose()
   })
 
@@ -275,6 +330,7 @@ describe('TensorlakeRuntime', () => {
     await expect(ctx.tensorlake.getSandbox()).rejects.toThrow('chmod exited 1: operation not permitted')
     expect(fixture.terminate).toHaveBeenCalledOnce()
     expect(infos).toEqual([['Tensorlake sandbox created: %s', 'sandbox-1']])
+    expect(lifecycleOutput).toEqual(['Tensorlake sandbox created: sandbox-1\n'])
 
     await fiber.dispose()
     expect(fixture.terminate).toHaveBeenCalledOnce()

@@ -6,7 +6,7 @@
  */
 
 import { posix } from 'node:path'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { RemoteAPIError, Sandbox, SandboxNotFoundError } from 'tensorlake'
 import type { CommandResult, RunOptions } from 'tensorlake'
@@ -126,6 +126,15 @@ interface SchemaResolvedConfig extends Config {
   timeoutSecs: number
 }
 
+interface AgentCreateOptions {
+  readonly meta?: Readonly<Record<string, unknown>>
+  readonly [key: string]: unknown
+}
+
+interface AgentCreator {
+  create(options: AgentCreateOptions): unknown
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     tensorlake: TensorlakeRuntime
@@ -172,6 +181,7 @@ export class TensorlakeRuntime extends Service {
     this.validate()
     this.cwd = this.config.cwd
     this.runtimeRoot = posix.join(this.cwd, '.dsh-tensorlake')
+    this.alignAgentWorkingDirectories()
     this.ready = this.open()
     // A deployment may load the owner before any adapter uses it. Keep a
     // failed eager connection observed; getSandbox() still returns the error.
@@ -196,6 +206,39 @@ export class TensorlakeRuntime extends Service {
     if (this.disposed) throw new Error('Tensorlake sandbox service is disposing')
   }
 
+  /**
+   * Replace host-facing agent cwd metadata before DSH freezes it into a
+   * session header. Every model-facing path consumer then shares the same
+   * remote identity as the Tensorlake providers and sandbox policy.
+  */
+  private alignAgentWorkingDirectories(): void {
+    const cwd = this.cwd
+    this.ctx.inject(['agents'], (ctx) => {
+      const traced = ctx.get('agents') as AgentCreator | undefined
+      if (traced === undefined) return
+      const target = (Reflect.get(traced, symbols.original) as AgentCreator | undefined) ?? traced
+      const originalDescriptor = Object.getOwnPropertyDescriptor(target, 'create')
+      const original = target.create
+      const create = function (this: AgentCreator, options: AgentCreateOptions): unknown {
+        return original.call(this, {
+          ...options,
+          meta: { ...options.meta, cwd },
+        })
+      }
+      target.create = create
+      return () => {
+        if (target.create !== create) return
+        if (originalDescriptor !== undefined) Object.defineProperty(target, 'create', originalDescriptor)
+        else Reflect.deleteProperty(target, 'create')
+      }
+    })
+  }
+
+  private reportLifecycle(action: 'created' | 'terminated', sandbox: Sandbox): void {
+    this.ctx.logger.info(`Tensorlake sandbox ${action}: %s`, sandbox.sandboxId)
+    process.stderr.write(`Tensorlake sandbox ${action}: ${sandbox.sandboxId}\n`)
+  }
+
   private readonly teardown = async (): Promise<void> => {
     this.disposed = true
     let sandbox: Sandbox
@@ -207,7 +250,7 @@ export class TensorlakeRuntime extends Service {
     }
     try {
       await sandbox.terminate()
-      this.ctx.logger.info('Tensorlake sandbox terminated: %s', sandbox.sandboxId)
+      this.reportLifecycle('terminated', sandbox)
     } catch (error: unknown) {
       if (!isRemoteMissing(error)) throw error
     }
@@ -243,7 +286,7 @@ export class TensorlakeRuntime extends Service {
       ...(this.config.diskMb !== undefined ? { diskMb: this.config.diskMb } : {}),
     })
     try {
-      this.ctx.logger.info('Tensorlake sandbox created: %s', sandbox.sandboxId)
+      this.reportLifecycle('created', sandbox)
       // Creation returns when the sandbox is Running, but the proxy route can
       // lag briefly; absorb transport failures on the first control command
       // only. A daemon-reported failure (RemoteAPIError or a nonzero exit)
@@ -275,7 +318,7 @@ export class TensorlakeRuntime extends Service {
     } catch (error: unknown) {
       try {
         await sandbox.terminate()
-        this.ctx.logger.info('Tensorlake sandbox terminated: %s', sandbox.sandboxId)
+        this.reportLifecycle('terminated', sandbox)
       } catch {
         // TODO(tensorlake-setup-rollback): Add retry state only if a real double
         // failure outlives Tensorlake's configured sandbox timeout.
