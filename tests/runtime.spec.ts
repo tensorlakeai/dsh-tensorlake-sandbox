@@ -58,6 +58,8 @@ describe('TensorlakeRuntime', () => {
     const fixture = fakeSandbox()
     sdk.create.mockResolvedValue(fixture.sandbox)
     const ctx = new Context()
+    const infos: unknown[][] = []
+    ctx.logger.info = ((...args: unknown[]) => { infos.push(args) }) as typeof ctx.logger.info
     const fiber = await ctx.plugin(TensorlakeRuntime, { apiKey: 'test-key' })
 
     const service = ctx.tensorlake
@@ -75,9 +77,14 @@ describe('TensorlakeRuntime', () => {
       args: ['-c', 'test -d "$1" && ! test -L "$1"', 'dsh-tensorlake', RUNTIME_ROOT],
     })
     expect(fixture.run).toHaveBeenNthCalledWith(4, 'chmod', { args: ['700', '--', RUNTIME_ROOT] })
+    expect(infos).toEqual([['Tensorlake sandbox created: %s', 'sandbox-1']])
 
     await fiber.dispose()
     expect(fixture.terminate).toHaveBeenCalledOnce()
+    expect(infos).toEqual([
+      ['Tensorlake sandbox created: %s', 'sandbox-1'],
+      ['Tensorlake sandbox terminated: %s', 'sandbox-1'],
+    ])
     await expect(service.getSandbox()).rejects.toThrow(/disposing/)
   })
 
@@ -136,13 +143,16 @@ describe('TensorlakeRuntime', () => {
     sdk.create.mockResolvedValue(fixture.sandbox)
     const ctx = new Context()
     const errors: unknown[] = []
+    const infos: unknown[][] = []
     ctx.logger.error = ((error: unknown) => { errors.push(error) }) as typeof ctx.logger.error
+    ctx.logger.info = ((...args: unknown[]) => { infos.push(args) }) as typeof ctx.logger.info
     const fiber = await ctx.plugin(TensorlakeRuntime, { apiKey: 'test-key' })
     await ctx.tensorlake.getSandbox()
 
     await expect(fiber.dispose()).resolves.toBeUndefined()
     expect(fixture.terminate).toHaveBeenCalledOnce()
     expect(errors).toEqual([])
+    expect(infos).toEqual([['Tensorlake sandbox created: %s', 'sandbox-1']])
   })
 
   it('does not classify other disposal failures as an already-gone sandbox', async () => {
@@ -237,11 +247,17 @@ describe('TensorlakeRuntime', () => {
         : {})))
     sdk.create.mockResolvedValue(fixture.sandbox)
     const ctx = new Context()
+    const infos: unknown[][] = []
+    ctx.logger.info = ((...args: unknown[]) => { infos.push(args) }) as typeof ctx.logger.info
     const fiber = await ctx.plugin(TensorlakeRuntime, { apiKey: 'test-key' })
 
     await expect(ctx.tensorlake.getSandbox()).rejects.toThrow('runtime root must be a real directory')
     expect(fixture.run.mock.calls.map(call => call[0])).toEqual(['bash', 'mkdir', 'bash'])
     expect(fixture.terminate).toHaveBeenCalledOnce()
+    expect(infos).toEqual([
+      ['Tensorlake sandbox created: %s', 'sandbox-1'],
+      ['Tensorlake sandbox terminated: %s', 'sandbox-1'],
+    ])
     await fiber.dispose()
   })
 
@@ -252,10 +268,13 @@ describe('TensorlakeRuntime', () => {
     fixture.terminate.mockRejectedValueOnce(new Error('cleanup failed'))
     sdk.create.mockResolvedValue(fixture.sandbox)
     const ctx = new Context()
+    const infos: unknown[][] = []
+    ctx.logger.info = ((...args: unknown[]) => { infos.push(args) }) as typeof ctx.logger.info
     const fiber = await ctx.plugin(TensorlakeRuntime, { apiKey: 'test-key' })
 
     await expect(ctx.tensorlake.getSandbox()).rejects.toThrow('chmod exited 1: operation not permitted')
     expect(fixture.terminate).toHaveBeenCalledOnce()
+    expect(infos).toEqual([['Tensorlake sandbox created: %s', 'sandbox-1']])
 
     await fiber.dispose()
     expect(fixture.terminate).toHaveBeenCalledOnce()

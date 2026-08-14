@@ -207,6 +207,7 @@ export class TensorlakeRuntime extends Service {
     }
     try {
       await sandbox.terminate()
+      this.ctx.logger.info('Tensorlake sandbox terminated: %s', sandbox.sandboxId)
     } catch (error: unknown) {
       if (!isRemoteMissing(error)) throw error
     }
@@ -242,6 +243,7 @@ export class TensorlakeRuntime extends Service {
       ...(this.config.diskMb !== undefined ? { diskMb: this.config.diskMb } : {}),
     })
     try {
+      this.ctx.logger.info('Tensorlake sandbox created: %s', sandbox.sandboxId)
       // Creation returns when the sandbox is Running, but the proxy route can
       // lag briefly; absorb transport failures on the first control command
       // only. A daemon-reported failure (RemoteAPIError or a nonzero exit)
@@ -273,6 +275,7 @@ export class TensorlakeRuntime extends Service {
     } catch (error: unknown) {
       try {
         await sandbox.terminate()
+        this.ctx.logger.info('Tensorlake sandbox terminated: %s', sandbox.sandboxId)
       } catch {
         // TODO(tensorlake-setup-rollback): Add retry state only if a real double
         // failure outlives Tensorlake's configured sandbox timeout.
