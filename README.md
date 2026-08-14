@@ -2,6 +2,15 @@
 
 `@tensorlake/dsh-sandbox` moves DeepSeek Harness file, subprocess, Bash, terminal, and LSP operations into one short-lived Tensorlake microVM. It is an installable dsh bundle and does not require changes to the Harness installation.
 
+## Prerequisites
+
+- Node.js `^22.19.0` or `>=24.0.0`
+- `@deepseek-ai/dsh` `0.1.0-rc.6` or a later compatible release
+- A Tensorlake project with `TENSORLAKE_API_KEY` set in the host environment
+- `DEEPSEEK_API_KEY` set in the host environment for the default DeepSeek model provider
+
+Keep credentials in environment variables or a secret manager; do not commit them to the profile or repository.
+
 ## Install
 
 Install dsh and add this bundle to the profile you run:
@@ -15,14 +24,34 @@ TENSORLAKE_API_KEY=... DEEPSEEK_API_KEY=... dsh --profile headless "build and te
 During development, install a local checkout from its directory:
 
 ```sh
+npm install
+npm run build
 dsh plugin --profile headless add .
 ```
 
 Use `dsh --profile headless --dump-config` to verify that the `@tensorlake/dsh-sandbox` layer disables the host `subprocess` and `fs-sandbox` providers, inserts the Tensorlake runtime, subprocess, and filesystem rows, and keeps `bash-sandbox` mounted in `danger-full-access` mode. In that mode Harness's sandbox-aware Bash executor delegates directly to the Tensorlake subprocess provider while still satisfying the permission-preset capability contract.
 
+## Smoke test
+
+Run one headless task that exercises both the subprocess and filesystem providers:
+
+```sh
+dsh --profile headless \
+  "Use Bash to run pwd and id. Create smoke-test.txt containing hello, read it back, and report the results."
+```
+
+A successful run reports `/home/tl-user/workspace` from `pwd`, the `tl-user` identity from `id`, and reads `hello` back from the file. The model-facing working directory is the same remote Linux path, so the response should not mention or fall back from a host-machine path.
+
 ## Configuration
 
 The bundle starts an ephemeral sandbox on profile boot and terminates it when dsh exits. The runtime module accepts these Cordis config fields:
+
+Each run prints the sandbox ID at both lifecycle boundaries. The IDs should match:
+
+```text
+Tensorlake sandbox created: <sandbox-id>
+Tensorlake sandbox terminated: <sandbox-id>
+```
 
 | Field | Default | Meaning |
 |---|---:|---|
