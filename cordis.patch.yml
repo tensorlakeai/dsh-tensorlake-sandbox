@@ -1,0 +1,33 @@
+# Replace the host execution providers with one shared Tensorlake microVM.
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+  disabled: true
+
+- id: fs-sandbox
+  name: '@deepseek-ai/dsh-fs-sandbox'
+  disabled: true
+
+# Host confinement is unnecessary for processes and files already isolated by
+# the microVM. Keep the policy service mounted for consumers that inject it.
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: danger-full-access
+    workspaceRoot: /workspace
+
+- id: bash-sandbox
+  name: '@deepseek-ai/dsh-bash-sandbox'
+  disabled: true
+
+- insert:
+    - id: tensorlake-runtime
+      name: '@tensorlake/dsh-sandbox/runtime'
+
+    - id: tensorlake-subprocess
+      name: '@tensorlake/dsh-sandbox/subprocess'
+
+    - id: tensorlake-filesystem
+      name: '@tensorlake/dsh-sandbox/filesystem'
+
+    - id: tensorlake-bash
+      name: '@deepseek-ai/dsh-bash-local'
