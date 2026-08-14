@@ -379,6 +379,9 @@ describe('TensorlakeFileSystem identity, metadata, and reads', () => {
       target: { targetKey: '/workspace/gone.txt', displayPath: '/workspace/dangling.txt' },
     })
     expect(listed.some(entry => entry.name === 'nested.txt')).toBe(false)
+    const listingScript = issued(remote, 'bash').map(args => args[1]).find(script => script?.includes('find "$1"'))
+    expect(listingScript).toContain('test -L "$dsh_entry" && grep -q "No such file or directory"')
+    expect(listingScript).toContain('cat "$dsh_stat_error" >&2')
   })
 
   it('projects canonical process paths, file URLs, and containment', async () => {
@@ -567,6 +570,8 @@ describe('TensorlakeFileSystem identity, metadata, and reads', () => {
     const workspace = await fs.resolve('/workspace')
     remote.failures.set('bash', new Error('listing transport failed'))
     await expectCode(fs.listDir(workspace), 'FS_IO_ERROR')
+    remote.failures.set('bash', { exitCode: 1, stdout: '', stderr: 'stat: Permission denied' })
+    await expectCode(fs.listDir(workspace), 'FS_PERMISSION_DENIED')
   })
 
   it('maps proxy, canonicalization, permission, and generic control failures', async () => {

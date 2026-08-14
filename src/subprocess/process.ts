@@ -1,6 +1,7 @@
 /** One asynchronously-started Tensorlake process projected onto the subprocess seam. */
 
 import { Buffer } from 'node:buffer'
+import { constants } from 'node:os'
 import { PassThrough, Writable } from 'node:stream'
 import { posix } from 'node:path'
 import { isRemoteMissing, OutputMode, ProcessStatus, RemoteAPIError, StdinMode } from '../runtime.ts'
@@ -40,14 +41,37 @@ const PREPARE_SCRIPT = [
 ].join('\n')
 
 /**
+ * Start the requested argv as a child so Node can distinguish a numeric exit
+ * from signal termination. Bash collapses both into `$?` (for example,
+ * SIGTERM and `exit 143` both produce 143), which is insufficient for the
+ * subprocess seam's Node-style outcome.
+ */
+export const PROCESS_LAUNCHER_SOURCE = [
+  "const { spawn } = require('node:child_process')",
+  "const { writeFileSync } = require('node:fs')",
+  "const { constants } = require('node:os')",
+  'const [status, rawCount, ...args] = process.argv.slice(1)',
+  'const count = Number(rawCount)',
+  'const entries = args.slice(0, count)',
+  'const argv = args.slice(count)',
+  "const env = Object.fromEntries(entries.map((entry) => { const separator = entry.indexOf('='); return [entry.slice(0, separator), entry.slice(separator + 1)] }))",
+  "const publish = (record, exitCode) => { writeFileSync(status, `${record}\\n`); process.exitCode = exitCode }",
+  "const child = spawn(argv[0], argv.slice(1), { env, stdio: 'inherit' })",
+  "child.once('error', (error) => { console.error(error.message); const code = error.code === 'ENOENT' ? 127 : 126; publish(`exit:${code}`, code) })",
+  "child.once('exit', (code, signal) => { if (signal === null) publish(`exit:${code ?? 1}`, code ?? 1); else publish(`signal:${signal}`, 128 + (constants.signals[signal] ?? 0)) })",
+].join(';')
+
+const SIGNAL_NAMES = new Set(Object.keys(constants.signals))
+
+/**
  * Build the wrapper the daemon starts. Positional arguments carry the private
  * state paths, the encoder source, the rebuilt environment, and the exact
  * argv, so no value ever crosses a shell-quoting layer. The encoders run as
  * explicit background jobs on named pipes — not process substitutions, whose
  * pids a bare `wait` does not cover — because the daemon stops capturing at
- * the direct process's exit: the wrapper publishes the user command's exit
- * status the moment it exits, then holds its own exit on both encoder pids so
- * every captured stream ends with its completion marker first.
+ * the direct process's exit: the launcher publishes the requested command's
+ * exit-or-signal outcome immediately, then the wrapper holds its own exit on
+ * both encoder pids so every captured stream ends with its completion marker.
  * @param spec - Fully resolved subprocess request.
  * @returns The bash script text.
  */
@@ -63,17 +87,15 @@ function wrapperScript(spec: SubprocessSpawnSpec): string {
     'dsh_out_spill=$4',
     'dsh_err_spill=$5',
     'dsh_encoder=$6',
-    'dsh_envc=$7',
-    'shift 7',
-    'dsh_env=( "${@:1:dsh_envc}" )',
-    'shift "$dsh_envc"',
+    'dsh_launcher=$7',
+    'dsh_envc=$8',
+    'shift 8',
     `{ ${encoder(spec.stdio.stdout, '$dsh_out_spill')}; } < "$dsh_out_pipe" &`,
     'dsh_out_encoder=$!',
     `{ ${encoder(spec.stdio.stderr, '$dsh_err_spill')}; } < "$dsh_err_pipe" >&2 &`,
     'dsh_err_encoder=$!',
-    'env -i -- "${dsh_env[@]}" "$@" > "$dsh_out_pipe" 2> "$dsh_err_pipe"',
+    'node -e "$dsh_launcher" "$dsh_status" "$dsh_envc" "$@" > "$dsh_out_pipe" 2> "$dsh_err_pipe"',
     'dsh_code=$?',
-    'printf \'%s\\n\' "$dsh_code" > "$dsh_status"',
     'wait "$dsh_out_encoder" "$dsh_err_encoder"',
     'exit "$dsh_code"',
   ].join('\n')
@@ -236,6 +258,7 @@ export class TensorlakeSubprocessHandle implements SubprocessHandle {
           this.paths.stdoutSpill,
           this.paths.stderrSpill,
           OUTPUT_ENCODER_SOURCE,
+          PROCESS_LAUNCHER_SOURCE,
           String(envArgs.length),
           ...envArgs,
           ...this.spec.argv,
@@ -269,7 +292,7 @@ export class TensorlakeSubprocessHandle implements SubprocessHandle {
         return { exitCode: null, signal: this.terminationSignal ?? 'SIGKILL' }
       }
       return this.terminationSignal === null
-        ? { exitCode: published, signal: null }
+        ? published
         : { exitCode: null, signal: this.terminationSignal }
     } catch (error: unknown) {
       const canceledPreparation = preparing && this.terminationController.signal.aborted
@@ -396,16 +419,23 @@ export class TensorlakeSubprocessHandle implements SubprocessHandle {
     })
   }
 
-  private async waitForStatus(sandbox: Sandbox, pid: number): Promise<number | undefined> {
+  private async waitForStatus(sandbox: Sandbox, pid: number): Promise<SubprocessOutcome | undefined> {
     for (;;) {
       this.termination.throwFailure()
       const raw = new TextDecoder().decode(await sandbox.readFile(this.paths.status)).trim()
       if (raw.length > 0) {
-        const exitCode = Number(raw)
-        if (!/^(?:0|[1-9][0-9]*)$/.test(raw) || !Number.isSafeInteger(exitCode) || exitCode > 255) {
-          throw new Error(`subprocess-tensorlake: remote wrapper published invalid exit code ${JSON.stringify(raw)}`)
+        // Accept the pre-signal-protocol numeric form for in-flight handles
+        // created before a hot reload; new wrappers always publish `exit:`.
+        const exitMatch = /^(?:exit:)?(0|[1-9][0-9]*)$/.exec(raw)
+        if (exitMatch !== null) {
+          const exitCode = Number(exitMatch[1])
+          if (Number.isSafeInteger(exitCode) && exitCode <= 255) return { exitCode, signal: null }
         }
-        return exitCode
+        const signalMatch = /^signal:(SIG[A-Z0-9]+)$/.exec(raw)
+        if (signalMatch !== null && SIGNAL_NAMES.has(signalMatch[1] as NodeJS.Signals)) {
+          return { exitCode: null, signal: signalMatch[1] as NodeJS.Signals }
+        }
+        throw new Error(`subprocess-tensorlake: remote wrapper published invalid outcome ${JSON.stringify(raw)}`)
       }
       const info = await sandbox.getProcess(pid).catch((error: unknown) => {
         if (isRemoteMissing(error)) return undefined

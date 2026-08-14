@@ -22,8 +22,8 @@ const PROXY_READY_RETRY_MS = 1_000
  * passwordless sudo and hands the leaf back to the user.
  */
 const CREATE_CWD_SCRIPT = [
-  'if mkdir -p -- "$1" 2>/dev/null; then exit 0; fi',
-  'sudo -n mkdir -p -- "$1" && sudo -n chown -- "$(id -u):$(id -g)" "$1"',
+  'if mkdir -p -- "$1" 2>/dev/null && test -w "$1"; then exit 0; fi',
+  'sudo -n mkdir -p -- "$1" && sudo -n chown -- "$(id -u):$(id -g)" "$1" && test -w "$1"',
 ].join('\n')
 
 export {
@@ -140,7 +140,7 @@ declare module '@deepseek-ai/cordis' {
 export class TensorlakeRuntime extends Service {
   static Config: z<Config> = z.object({
     apiKey: z.string(),
-    cwd: z.string().default('/workspace'),
+    cwd: z.string().default('/home/tl-user/workspace'),
     timeoutSecs: z.number().default(600),
     cpus: z.number(),
     memoryMb: z.number(),

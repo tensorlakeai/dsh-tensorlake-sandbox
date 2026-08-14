@@ -11,8 +11,8 @@ import TensorlakeRuntime, {
   TensorlakeCommandError,
 } from '../src/runtime.ts'
 
-const CWD = '/workspace'
-const RUNTIME_ROOT = '/workspace/.dsh-tensorlake'
+const CWD = '/home/tl-user/workspace'
+const RUNTIME_ROOT = '/home/tl-user/workspace/.dsh-tensorlake'
 
 const sdk = vi.hoisted(() => ({
   create: vi.fn(),
@@ -67,6 +67,7 @@ describe('TensorlakeRuntime', () => {
     expect(sdk.create).toHaveBeenCalledWith({ apiKey: 'test-key', timeoutSecs: 600 })
     const createCwd = fixture.run.mock.calls[0]
     expect(createCwd?.[0]).toBe('bash')
+    expect(createCwd?.[1]?.args?.[1]).toContain('test -w "$1"')
     expect(createCwd?.[1]?.args?.[1]).toContain('sudo -n mkdir -p -- "$1"')
     expect(createCwd?.[1]?.args?.at(-1)).toBe(CWD)
     expect(fixture.run).toHaveBeenNthCalledWith(2, 'mkdir', { args: ['-p', '--', RUNTIME_ROOT] })

@@ -1,5 +1,10 @@
 import { Buffer } from 'node:buffer'
+import { execFile } from 'node:child_process'
 import { once } from 'node:events'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -19,11 +24,12 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import TensorlakeSubprocessRuntime from '../src/subprocess/index.ts'
 import { environmentArguments, readAmbientEnvironment } from '../src/subprocess/environment.ts'
 import { OUTPUT_COMPLETE_MARKER, TensorlakeOutputDecoder, TensorlakeOutputReader } from '../src/subprocess/output.ts'
-import { TensorlakeSubprocessHandle } from '../src/subprocess/process.ts'
+import { PROCESS_LAUNCHER_SOURCE, TensorlakeSubprocessHandle } from '../src/subprocess/process.ts'
 import { asError, MAX_TIMER_DELAY_MS, parsePositiveId, waitTick } from '../src/subprocess/provider.ts'
 import { groupAlive, sessionProcessGroups, signalRemoteGroups } from '../src/subprocess/remote.ts'
 
-const AMBIENT = 'PATH=/ambient/bin\0KEEP=safe\0UNICODE=你好\0NPM_TOKEN=secret\0DSH_STALE=old\0BROKEN\0=bad\0'
+const AMBIENT = 'PATH=/ambient/bin\0KEEP=safe\0UNICODE=你好\0NPM_TOKEN=secret\0DSH_STALE=old\0dSh_session_id=stale\0BROKEN\0=bad\0'
+const execFileAsync = promisify(execFile)
 
 /** Mirror of the remote `node -e` encoder: whole 3-byte quanta, then the marker. */
 class RemoteEncoder {
@@ -398,17 +404,19 @@ function wrapperArguments(fake: FakeSandbox): {
   script: string
   paths: string[]
   encoder: string
+  launcher: string
   env: string[]
   argv: string[]
 } {
   const args = fake.starts[0]?.options.args ?? []
-  const count = Number(args[9])
+  const count = Number(args[10])
   return {
     script: args[1] ?? '',
     paths: args.slice(3, 8),
     encoder: args[8] ?? '',
-    env: args.slice(10, 10 + count),
-    argv: args.slice(10 + count),
+    launcher: args[9] ?? '',
+    env: args.slice(11, 11 + count),
+    argv: args.slice(11 + count),
   }
 }
 
@@ -541,6 +549,7 @@ describe('Tensorlake remote environment', () => {
       ['UNICODE', '你好'],
       ['NPM_TOKEN', 'secret'],
       ['DSH_STALE', 'old'],
+      ['dSh_session_id', 'stale'],
     ])
     expect(environmentArguments(ambient, undefined)).toEqual([
       'PATH=/ambient/bin',
@@ -579,6 +588,29 @@ describe('Tensorlake remote environment', () => {
 })
 
 describe('TensorlakeSubprocessHandle', () => {
+  it('publishes distinct outcomes for exit 143 and SIGTERM', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-tensorlake-launcher-'))
+    const status = join(directory, 'status')
+    const baseArgs = [
+      '-e',
+      PROCESS_LAUNCHER_SOURCE,
+      status,
+      '1',
+      `PATH=${process.env.PATH ?? '/usr/bin:/bin'}`,
+      'sh',
+      '-c',
+    ]
+    try {
+      await execFileAsync(process.execPath, [...baseArgs, 'exit 143']).catch(() => undefined)
+      await expect(readFile(status, 'utf8')).resolves.toBe('exit:143\n')
+
+      await execFileAsync(process.execPath, [...baseArgs, 'kill -TERM $$']).catch(() => undefined)
+      await expect(readFile(status, 'utf8')).resolves.toBe('signal:SIGTERM\n')
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('starts remotely, rebuilds the environment, and collects bounded output', async () => {
     const fake = new FakeSandbox()
     const handle = testHandle(runtime(fake), spec({
@@ -620,6 +652,8 @@ describe('TensorlakeSubprocessHandle', () => {
     ])
     expect(wrapper.encoder).toContain("toString('base64')")
     expect(wrapper.encoder).toContain(OUTPUT_COMPLETE_MARKER)
+    expect(wrapper.launcher).toContain("child.once('exit'")
+    expect(wrapper.launcher).toContain('signal:${signal}')
     expect(wrapper.argv).toEqual(['tool', 'argument with spaces'])
     expect(wrapper.env).toEqual([
       'PATH=/bin',
@@ -629,7 +663,7 @@ describe('TensorlakeSubprocessHandle', () => {
     ])
     expect(wrapper.script).toContain('tee --output-error=warn-nopipe >(head -c 32 > "$dsh_out_spill")')
     expect(wrapper.script).toContain('{ node -e "$dsh_encoder"; } < "$dsh_err_pipe" >&2 &')
-    expect(wrapper.script).toContain('env -i -- "${dsh_env[@]}" "$@" > "$dsh_out_pipe" 2> "$dsh_err_pipe"')
+    expect(wrapper.script).toContain('node -e "$dsh_launcher" "$dsh_status" "$dsh_envc" "$@"')
     expect(fake.stdinData).toEqual(['hello'])
     expect(fake.stdinCloses).toBe(1)
 
@@ -916,6 +950,16 @@ describe('TensorlakeSubprocessHandle', () => {
     await expect(handle.waitForExit()).resolves.toBe(true)
   })
 
+  it('preserves a signal that terminates the requested command independently', async () => {
+    const fake = new FakeSandbox()
+    const handle = testHandle(runtime(fake), spec(), '/runtime/self-signaled')
+    await started(fake)
+    await fake.completeBoth()
+    fake.status = 'signal:SIGTERM\n'
+
+    await expect(handle.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
+  })
+
   it('contains a failing pipe teardown while reporting the transport failure', async () => {
     const fake = new FakeSandbox()
     const handle = testHandle(runtime(fake), spec({
@@ -961,7 +1005,7 @@ describe('TensorlakeSubprocessHandle', () => {
       const handle = testHandle(runtime(fake), spec(), `/runtime/invalid-status-${stateDir}`)
       await started(fake)
       fake.status = raw
-      await expect(handle.done).rejects.toThrow('published invalid exit code')
+      await expect(handle.done).rejects.toThrow('published invalid outcome')
       fake.groupLive = false
       await expect(handle.waitForExit()).resolves.toBe(true)
     }

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
@@ -24,7 +24,9 @@ describe('installable bundle', () => {
   })
 
   it('disables the local providers and inserts one shared Tensorlake world', async () => {
-    const patches = yaml.load(await readFile(resolve(root, 'cordis.patch.yml'), 'utf8')) as PatchOptions[]
+    const patches = yaml.load(await readFile(resolve(root, 'cordis.patch.yml'), 'utf8'), {
+      schema: entryListSchema,
+    }) as PatchOptions[]
     const warnings: string[] = []
     const entries = applyEntryPatches([
       { id: 'subprocess', name: '@deepseek-ai/dsh-subprocess-local' },
@@ -43,7 +45,10 @@ describe('installable bundle', () => {
     expect(entries.find(entry => entry.id === 'bash-sandbox')?.disabled).toBe(true)
     expect(entries.find(entry => entry.id === 'sandbox-policy')?.config).toEqual({
       mode: 'danger-full-access',
-      workspaceRoot: '/workspace',
+      workspaceRoot: { __jsExpr: "process.env.DSH_TENSORLAKE_CWD || '/home/tl-user/workspace'" },
+    })
+    expect(entries.find(entry => entry.id === 'tensorlake-runtime')?.config).toEqual({
+      cwd: { __jsExpr: "process.env.DSH_TENSORLAKE_CWD || '/home/tl-user/workspace'" },
     })
     expect(entries.filter(entry => entry.id?.startsWith('tensorlake-')).map(entry => entry.name)).toEqual([
       '@tensorlake/dsh-sandbox/runtime',

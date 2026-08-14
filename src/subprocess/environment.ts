@@ -56,7 +56,7 @@ export function environmentArguments(
 ): string[] {
   const environment = new Map<string, string>()
   for (const [name, value] of ambient) {
-    if (name.startsWith('DSH_') || SENSITIVE_ENV_PATTERN.test(name)) continue
+    if (name.toUpperCase().startsWith('DSH_') || SENSITIVE_ENV_PATTERN.test(name)) continue
     environment.set(name, value)
   }
   for (const [name, value] of Object.entries(explicit ?? {})) {

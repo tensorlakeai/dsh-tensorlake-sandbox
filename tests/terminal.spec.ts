@@ -17,7 +17,7 @@ import TensorlakeSubprocessRuntime from '../src/subprocess/index.ts'
 import { MAX_TIMER_DELAY_MS } from '../src/subprocess/provider.ts'
 import { spawnTensorlakeTerminal } from '../src/subprocess/terminal.ts'
 
-const AMBIENT = 'PATH=/ambient/bin\0KEEP=safe\0UNICODE=你好\0NPM_TOKEN=secret\0DSH_STALE=old\0'
+const AMBIENT = 'PATH=/ambient/bin\0KEEP=safe\0UNICODE=你好\0NPM_TOKEN=secret\0DSH_STALE=old\0dsh_session_id=stale\0'
 
 class FakePty {
   readonly inputs: string[] = []

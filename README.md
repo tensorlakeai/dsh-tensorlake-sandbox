@@ -27,18 +27,29 @@ The bundle starts an ephemeral sandbox on profile boot and terminates it when ds
 | Field | Default | Meaning |
 |---|---:|---|
 | `apiKey` | `TENSORLAKE_API_KEY` | Tensorlake API credential used only by the host SDK |
-| `cwd` | `/workspace` | Absolute Linux working directory shared by file and process providers |
+| `cwd` | `/home/tl-user/workspace` | Absolute Linux working directory shared by file and process providers |
 | `timeoutSecs` | `600` | Sandbox inactivity timeout |
 | `cpus` | Tensorlake default | Virtual CPU allocation |
 | `memoryMb` | Tensorlake default | Memory allocation in MiB |
 | `diskMb` | Tensorlake default | Root disk allocation in MiB |
 
-Override the inserted row in the profile's `cordis.patch.yml`; a patch replaces the complete config, so restate every non-default field you need:
+The shipped bundle derives both the runtime cwd and policy workspace from `DSH_TENSORLAKE_CWD`. Prefer that single setting when changing the workspace so the Bash policy and remote providers cannot drift:
+
+```sh
+DSH_TENSORLAKE_CWD=/workspace/project dsh --profile headless "build and test this repo"
+```
+
+To configure the rows directly in the profile's `cordis.patch.yml`, override both together. A patch replaces the complete config, so restate every non-default field you need:
 
 ```yaml
+- id: sandbox-policy
+  config:
+    mode: danger-full-access
+    workspaceRoot: /workspace/project
+
 - id: tensorlake-runtime
   config:
-    cwd: /workspace
+    cwd: /workspace/project
     timeoutSecs: 1800
     cpus: 2
     memoryMb: 4096
@@ -48,7 +59,7 @@ Override the inserted row in the profile's `cordis.patch.yml`; a patch replaces 
 
 ## Runtime requirements
 
-The Tensorlake image must provide `bash`, Node.js, and GNU `base64`, `chmod`, `env`, `find`, `ln`, `mkdir`, `mv`, `ps`, `realpath`, `rm`, `stat`, and `tee`. The default managed Ubuntu image provides these tools.
+The Tensorlake image must provide `bash`, Node.js, and GNU `base64`, `cat`, `chmod`, `env`, `find`, `grep`, `ln`, `mkdir`, `mktemp`, `mv`, `ps`, `realpath`, `rm`, `stat`, and `tee`. The default managed Ubuntu image provides these tools. The runtime verifies that a configured cwd is writable and uses the managed image's passwordless `sudo` to create and hand off a protected path when necessary.
 
 The package targets `@deepseek-ai/dsh` `0.1.0-rc.6` or later compatible release. The dsh installation supplies its optional Cordis, filesystem, subprocess, and Schemastery peers through the profile module fallback. The package uses only public `ctx.fs` and `ctx.subprocess` service definitions; no DeepSeek Harness source registration, generated catalogs, or in-repository configuration is required.
 
