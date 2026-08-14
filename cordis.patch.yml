@@ -8,8 +8,9 @@
   disabled: true
 
 # Host confinement is unnecessary for processes and files already isolated by
-# the microVM. DSH_TENSORLAKE_CWD is evaluated independently for these two rows
-# so the policy and runtime always receive the same workspace override.
+# the microVM. Advertise danger-full-access within that remote boundary so the
+# sandbox-aware Bash executor delegates directly to the Tensorlake subprocess
+# provider while remaining compatible with Harness permission presets.
 - id: sandbox-policy
   name: '@deepseek-ai/dsh-sandbox-policy'
   config:
@@ -18,7 +19,24 @@
 
 - id: bash-sandbox
   name: '@deepseek-ai/dsh-bash-sandbox'
-  disabled: true
+  disabled: false
+
+- id: approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: never
+
+# Restricted host-filesystem modes cannot describe the microVM boundary. Keep
+# the selectable permission surface honest by exposing only its full-access
+# mode, paired with the no-prompt approval policy above.
+- id: permission
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    presets:
+      danger-full-access:
+        sandbox: danger-full-access
+        approval: never
+    defaultPreset: danger-full-access
 
 - insert:
     - id: tensorlake-runtime
@@ -31,6 +49,3 @@
 
     - id: tensorlake-filesystem
       name: '@tensorlake/dsh-sandbox/filesystem'
-
-    - id: tensorlake-bash
-      name: '@deepseek-ai/dsh-bash-local'

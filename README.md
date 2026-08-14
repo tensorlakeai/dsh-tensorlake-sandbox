@@ -18,7 +18,7 @@ During development, install a local checkout from its directory:
 dsh plugin --profile headless add .
 ```
 
-Use `dsh --profile headless --dump-config` to verify that the `@tensorlake/dsh-sandbox` layer disables `subprocess`, `fs-sandbox`, and `bash-sandbox`, then inserts the Tensorlake runtime, subprocess, filesystem, and unconfined Bash rows.
+Use `dsh --profile headless --dump-config` to verify that the `@tensorlake/dsh-sandbox` layer disables the host `subprocess` and `fs-sandbox` providers, inserts the Tensorlake runtime, subprocess, and filesystem rows, and keeps `bash-sandbox` mounted in `danger-full-access` mode. In that mode Harness's sandbox-aware Bash executor delegates directly to the Tensorlake subprocess provider while still satisfying the permission-preset capability contract.
 
 ## Configuration
 

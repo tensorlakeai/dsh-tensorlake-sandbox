@@ -37,12 +37,14 @@ describe('installable bundle', () => {
         config: { mode: 'workspace-write', workspaceRoot: '/host' },
       },
       { id: 'bash-sandbox', name: '@deepseek-ai/dsh-bash-sandbox' },
+      { id: 'approval', name: '@deepseek-ai/dsh-user-approval', config: { policy: 'ask' } },
+      { id: 'permission', name: '@deepseek-ai/dsh-permission-presets' },
     ], patches, (message, ...args) => { warnings.push([message, ...args].join(' ')) })
 
     expect(warnings).toEqual([])
     expect(entries.find(entry => entry.id === 'subprocess')?.disabled).toBe(true)
     expect(entries.find(entry => entry.id === 'fs-sandbox')?.disabled).toBe(true)
-    expect(entries.find(entry => entry.id === 'bash-sandbox')?.disabled).toBe(true)
+    expect(entries.find(entry => entry.id === 'bash-sandbox')?.disabled).toBe(false)
     expect(entries.find(entry => entry.id === 'sandbox-policy')?.config).toEqual({
       mode: 'danger-full-access',
       workspaceRoot: { __jsExpr: "process.env.DSH_TENSORLAKE_CWD || '/home/tl-user/workspace'" },
@@ -50,11 +52,17 @@ describe('installable bundle', () => {
     expect(entries.find(entry => entry.id === 'tensorlake-runtime')?.config).toEqual({
       cwd: { __jsExpr: "process.env.DSH_TENSORLAKE_CWD || '/home/tl-user/workspace'" },
     })
+    expect(entries.find(entry => entry.id === 'approval')?.config).toEqual({ policy: 'never' })
+    expect(entries.find(entry => entry.id === 'permission')?.config).toEqual({
+      presets: {
+        'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' },
+      },
+      defaultPreset: 'danger-full-access',
+    })
     expect(entries.filter(entry => entry.id?.startsWith('tensorlake-')).map(entry => entry.name)).toEqual([
       '@tensorlake/dsh-sandbox/runtime',
       '@tensorlake/dsh-sandbox/subprocess',
       '@tensorlake/dsh-sandbox/filesystem',
-      '@deepseek-ai/dsh-bash-local',
     ])
   })
 })
