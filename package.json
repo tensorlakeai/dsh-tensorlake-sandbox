@@ -53,7 +53,7 @@
     "lint": "oxlint src tests tsdown.config.ts vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run build && publint",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && publint",
     "prepack": "tsdown"
   },
   "dependencies": {
@@ -94,5 +94,6 @@
     "typescript": "^6.0.3",
     "unrun": "^0.3.1",
     "vitest": "^4.1.8"
-  }
+  },
+  "packageManager": "pnpm@11.28.5"
 }

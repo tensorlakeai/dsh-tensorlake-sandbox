@@ -24,8 +24,8 @@ TENSORLAKE_API_KEY=... DEEPSEEK_API_KEY=... dsh --profile headless "build and te
 During development, install a local checkout from its directory:
 
 ```sh
-npm install
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
 dsh plugin --profile headless add .
 ```
 
@@ -99,9 +99,17 @@ The package targets `@deepseek-ai/dsh` `0.1.0-rc.6` or later compatible release.
 ## Develop
 
 ```sh
-npm install
-npm run check
+pnpm install --frozen-lockfile
+pnpm run check
 npm pack
 ```
 
 The three Loader entry points are `@tensorlakeai/dsh-sandbox/runtime`, `@tensorlakeai/dsh-sandbox/filesystem`, and `@tensorlakeai/dsh-sandbox/subprocess`. Each module default-exports its service class; do not add function-plugin named exports to those modules because the Cordis Loader treats mixed export forms as a function-plugin namespace.
+
+## Dependency installation
+
+Use Node.js 22+ and pnpm 11.28.5. Run `pnpm install --frozen-lockfile` before the
+project build/test commands. The committed policy requires registry releases
+to be at least 24 hours old, rejects missing publish dates, rechecks frozen
+locks, and disables install lifecycle scripts. Run reviewed build steps
+explicitly; do not bypass the delay for a newly published dependency.
